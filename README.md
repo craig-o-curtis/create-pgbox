@@ -1,207 +1,164 @@
-# Postgres + pgAdmin Tutorial
+# create-pgbox
 
-This is a small project whose only job is to stand up a **PostgreSQL database** and a **pgAdmin** web UI using a single `docker-compose.yaml` file. The idea is: instead of installing Postgres on your Mac directly, you run it inside Docker containers. One command starts both services; one command stops them.
+Spin up a local **PostgreSQL** database and a **pgAdmin** web UI with one
+command, using Docker Compose. No local Postgres install required — everything
+runs in containers, and your data persists between restarts.
 
-This README is written as a tutorial for someone new to Docker Compose. Read it top to bottom, then read the `docker-compose.yaml` again with the explanations in mind.
+- **Postgres** — the database server (`postgres:18`), on `localhost:5432`
+- **pgAdmin** — a browser GUI (`dpage/pgadmin4:9`), on `http://localhost:5050`
 
-## What problem does this solve?
+---
 
-Normally, to use Postgres you'd install it, configure it, and manage a running server process on your machine. Docker Compose lets you describe the whole setup in one file and run it anywhere (Mac, Linux, a server) without that manual setup. "Compose" just means "run several containers together that work as a system."
+## 10-second spin-up
 
-## The two services
+1. **Open Docker Desktop** (the Docker engine must be running).
+2. **Create `.env`** — required, first time only:
+   ```bash
+   cp .env.example .env
+   ```
+3. **Start it:**
+   ```bash
+   docker compose up -d
+   ```
 
-A **service** in Compose is one container (one running program). We define two:
+pgAdmin → <http://localhost:5050>. Stop with `docker compose down`.
 
-1. **`postgres`** — the actual database server.
-2. **`pgadmin`** — a web-based GUI to click around your database instead of using the command line.
+---
 
-Each service pulls a ready-made image from Docker Hub, so you don't build anything yourself.
+## Prerequisites
 
-## Walking through `docker-compose.yaml`
+- [Docker Desktop](https://www.docker.com/products/docker-desktop/) (includes
+  Docker Compose)
 
-### `services:` (line 1)
+## Verify & access
 
-The top-level key that holds all your containers.
-
-### `postgres:` (line 2)
-
-```yaml
-image: postgres:18
-```
-
-`image` is the prebuilt blueprint for the container. We pin it to `postgres:18` (the current stable major as of this writing). Pinning a major version keeps things reproducible—you get Postgres 18.x and won't be surprised by an automatic jump to 19. If you want to freeze the exact patch too, use `postgres:18.4`. (Avoid `postgres:latest`, which silently pulls whatever is newest and can break you on upgrade—see "What you're missing" below.)
-
-```yaml
-container_name: pg-pgdb
-```
-
-The human-readable name Docker gives the running container. Without it, Docker auto-names it `<project>_<service>_<number>`.
-
-```yaml
-environment:
-  POSTGRES_USER: postgres
-  POSTGRES_PASSWORD: postgres
-  POSTGRES_DB: pgdb
-```
-
-These are environment variables the Postgres image reads on first startup to initialize the database: the admin user, its password, and a default database to create. The official `postgres` image knows these specific names.
-
-```yaml
-ports:
-  - "5432:5432"
-```
-
-Maps **host port : container port**. `5432` is Postgres's default port. This lets an app on your Mac (or a tool like psql) reach the database at `localhost:5432`. The left number is your machine; the right is inside the container. Change the left one if 5432 is already taken (e.g. another local Postgres is running).
-
-```yaml
-volumes:
-  - postgres_data:/var/lib/postgresql
-```
-
-This is the important persistence line. Containers are **ephemeral**—if you delete the container, its data goes away. A volume mounts a persistent storage area from your host (managed by Docker) onto the directory where Postgres keeps its data. Note the mount point is `/var/lib/postgresql` (the parent), **not** `/var/lib/postgresql/data`—the `postgres:18` image expects a single mount at the parent so it can store data in a version-specific subdirectory (e.g. `/var/lib/postgresql/18`). Mounting at the old `/var/lib/postgresql/data` path makes PG 18 refuse to start. Result: your data survives container restarts and recreations.
-
-```yaml
-healthcheck:
-  test: ["CMD-SHELL", "pg_isready -U postgres -d pgdb"]
-  interval: 10s
-  timeout: 5s
-  retries: 5
-  start_period: 10s
-```
-
-A **healthcheck** is how Docker decides if the container is actually _ready_, not just _running_. `pg_isready` is a tool bundled in the Postgres image that asks the server "are you accepting connections yet?" The `test` is the only required field; `interval`, `timeout`, `retries`, and `start_period` are optional (Docker defaults: `30s`/`30s`/`3`/`0s`) and are written out here explicitly for clarity. `interval: 10s` = run the check every 10s; `timeout: 5s` = each check must finish within 5s; `retries: 5` = mark `unhealthy` after 5 consecutive failures; `start_period: 10s` = give Postgres a 10s grace window to boot before failures count. The resulting `healthy` status is what the `pgadmin` service waits on via `depends_on`.
-
-### `pgadmin:` (lines 14–21)
-
-Same shape as above, but for `dpage/pgadmin4:9` (pgAdmin 4, major version 9):
-
-- `PGADMIN_DEFAULT_EMAIL` / `PGADMIN_DEFAULT_PASSWORD` are the login for the pgAdmin web UI.
-- `ports: "5050:80"` — pgAdmin listens on port 80 inside the container; we expose it on `5050` on your Mac so it doesn't collide with anything else. You'll open `http://localhost:5050` in a browser.
-- `depends_on` with `condition: service_healthy` — tells Compose: "don't start pgAdmin until the `postgres` container reports `healthy`." This prevents the classic bug where pgAdmin (or any client) starts first and fails to connect because Postgres isn't ready yet. Note `depends_on` controls _start order_, not _network readiness_—the healthcheck is what makes the wait meaningful.
-
-### `volumes:` (lines 22–23)
-
-```yaml
-volumes:
-  postgres_data:
-```
-
-This declares the named volume referenced by the `postgres` service. The name must match the left side of the mount on line 12. Docker creates this volume automatically on `docker compose up`—it does not exist on your system until then, and the name is arbitrary (it's a Docker label, not a macOS folder).
-
-## How to run it
-
-From this folder:
-
-```bash
-docker compose up -d
-```
-
-### What the `-d` flag means
-
-`-d` stands for **detached**. `docker compose up` has two modes:
-
-- **Foreground (no `-d`)** — Compose starts the containers and attaches your terminal to their combined log stream. The command stays alive; `Ctrl+C` stops following the logs (and signals the containers to stop). Good for watching a fresh setup boot in real time.
-- **Detached (`-d`)** — Compose starts the containers in the background and immediately returns your terminal prompt. The services keep running, but you don't see their logs live. You'll normally use this once a setup works, then inspect logs on demand with `docker compose logs -f`.
-
-Other useful `up` flags:
-
-| Flag | What it does |
-| --- | --- |
-| `--build` | Rebuild any images built from a `Dockerfile` in this project. Not needed here (we use prebuilt images), but essential once you add your own. |
-| `--force-recreate` | Recreate the containers even if Compose thinks nothing changed—handy after editing `docker-compose.yaml` when Compose believes it's already up to date. |
-| `--no-deps` | Start only the named service, skipping the ones it depends on. |
-| `--pull` | Always pull newer images before starting. |
-| `-d` | Run detached (background), as described above. |
-
-### Why `down` doesn't take `-d`
-
-`docker compose down` is a **one-shot teardown**: it stops and removes the containers and network, then the command *exits*. There's no long-running foreground process to detach from, so a `-d` flag would be meaningless—`down` already gives your prompt back right away. Use `-v` if you also want to delete the data volume (still just exits when done).
-
-- To stop: `docker compose down`. Add `-v` to also delete the volume (and your data!).
-
-### Accessing pgAdmin
-
-pgAdmin is a web UI, not a command-line tool. Once the containers are up (Postgres `healthy`, pgAdmin `Up`), connect to it in your browser:
-
-1. **Open the UI.** Go to <http://localhost:5050>. (pgAdmin listens on port `80` inside its container; we published it on host port `5050`, so that's the URL you use.)
-2. **Log in.** Use the credentials from the compose file:
-   - **Email:** `admin@example.com`
-   - **Password:** `admin`
-3. **Register the Postgres server.** pgAdmin does *not* know about your database automatically—you have to point it at the `postgres` container. In the left panel:
-   - Right-click **Servers** → **Register** → **Server…**
-   - **General** tab → **Name:** `pgdb` (any label you like).
-   - **Connection** tab:
-     - **Host name/address:** `postgres` ← this is the Compose *service name*, not `localhost`. Inside the Compose network, containers reach each other by service name. (Using `localhost` here would point at pgAdmin's own container, not the database.)
-     - **Port:** `5432`
-     - **Maintenance database:** `pgdb`
-     - **Username:** `postgres`
-     - **Password:** `postgres`
-     - Tick **Save password** so you don't re-enter it each time.
-   - Click **Save**.
-4. **Explore.** Expand **Servers → pgdb → Databases → pgdb**. You can now right-click to create tables, open the **Query Tool** to run SQL, and browse data visually.
-
-> **Note on run mode:** if you started with `docker compose up` (no `-d`), your terminal is busy streaming logs and the services stop if you press `Ctrl+C` in that terminal. The browser steps above work fine while it's running. To free your terminal later, stop it (`Ctrl+C`), then start it detached with `docker compose up -d`.
-
-
-## Useful commands
-
-Run these from this folder. Most `docker compose` commands read `docker-compose.yaml` in the current directory.
-
-| Command | What it does |
-| --- | --- |
-| `docker compose up` | Build (if needed) and start all services in the foreground, streaming logs. Stop with `Ctrl+C`. |
-| `docker compose up -d` | Same, but **detached** (background). You get your terminal back. |
-| `docker compose ps` | List the services and their status (`Up`, `Healthy`, `Exit`). This is the quick "is it running?" check. |
-| `docker compose logs` | Show logs from all services. Add a service name to narrow it. |
-| `docker compose logs -f postgres` | Follow the Postgres logs live. Good for watching boot or debugging connection errors. |
-| `docker compose down` | Stop and remove the containers and network. Volume data is kept. |
-| `docker compose down -v` | Like `down`, but also **deletes the volume** (`postgres_data`) and all its data. Full reset. |
-| `docker compose restart` | Stop and start the containers without rebuilding. |
-| `docker compose exec postgres psql -U postgres -d pgdb` | Open a `psql` shell inside the running Postgres container (no local client needed). |
-| `docker compose config` | Validate and print the resolved Compose config to confirm no YAML errors. |
-| `docker volume ls` | List all Docker volumes on your machine (find `postgres-cc_postgres_data`). |
-| `docker stats` | Live CPU/memory/network usage for running containers. |
-
-### Quick health check
-
-After `docker compose up -d`, confirm Postgres is healthy before connecting:
+After `docker compose up -d`, check both services are up (Postgres should show
+`healthy`):
 
 ```bash
 docker compose ps
 ```
 
-You should see `pg-pgdb` with status `Up ... (healthy)` and `pgadmin-pgdb` `Up`. Then open `http://localhost:5050`.
+Open pgAdmin at <http://localhost:5050> and log in with the
+`PGADMIN_DEFAULT_EMAIL` / `PGADMIN_DEFAULT_PASSWORD` from your `.env`
+(template defaults: `admin@example.com` / `change_me`).
 
-## Reusing Postgres for other projects
+To stop:
 
-A common early question: when you start a new app that needs a database, do you come back to *this* repo and spin it up, or do you put a Compose file in the new project?
+```bash
+docker compose down          # stop; keeps your data
+docker compose down -v       # stop and DELETE all data (full reset)
+```
 
-**Short answer: give each project its own `docker-compose.yaml`.** This repo is one self-contained Postgres+pgAdmin environment. Your next project should have its own database instance, declared in its own `docker-compose.yaml` next to its code. That way the database lives with the project, starts and stops with it, and doesn't tangle with this one.
+## Configuration (`.env`)
 
-How to do it:
+Credentials are read from a `.env` file (git-ignored, never committed). Copy the
+template and adjust as needed:
 
-1. **Copy this file as a starting point.** Take `docker-compose.yaml` from here and drop it into the new project's folder.
-2. **Make the names unique.** Change `container_name`, `POSTGRES_DB`, and the volume name so they don't collide with this repo (or any other running Compose project). Compose already prefixes volumes with the project folder name, but explicit, distinct names avoid confusion. For example, a `blog-api` project might use `container_name: pg-blog`, `POSTGRES_DB: blog`, and volume `blog_data`.
-3. **Avoid port clashes.** If this repo's Postgres is using host port `5432`, a second Compose project can't also publish `5432` on your machine. Either stop this one first, or change the new project's host port (e.g. `"5433:5432"`). Inside each Compose network the container port stays `5432`; only the *host* side collides.
-4. **Different credentials.** Don't reuse `postgres`/`postgres` across projects—set a distinct password per project (ideally via an `.env` file, as noted in "What you're missing").
-5. **Run it from the new folder.** `cd` into the new project and `docker compose up -d`. Compose reads the `docker-compose.yaml` in the current directory, so each project is independently managed.
+| Variable                 | Default             | Purpose                    |
+| ------------------------ | ------------------- | -------------------------- |
+| `POSTGRES_USER`          | `postgres`          | Database admin user        |
+| `POSTGRES_PASSWORD`      | `change_me`         | Database admin password    |
+| `PGADMIN_DEFAULT_EMAIL`  | `admin@example.com` | pgAdmin login email        |
+| `PGADMIN_DEFAULT_PASSWORD` | `change_me`       | pgAdmin login password     |
 
-**When you *would* reuse this exact instance:** only if multiple small apps on your machine should share one database. In that case you can `docker compose up -d` here and point those apps at `localhost:5432` (or `5433`, etc.). But sharing one DB across projects is usually a bad habit—data, schemas, and lifecycles get coupled. Prefer one database per project.
+The database name (`pgdb`), ports (`5432`, `5050`), and container names
+(`pg-pgdb`, `pgadmin-pgdb`) are set in `docker-compose.yaml`.
 
-**One pgAdmin is enough.** You don't need a pgAdmin container in every project. Keep this one running and register each project's server in it (host = the other project's service name *only if* they share a Docker network; otherwise use `host.docker.internal` or your machine's `localhost` plus the project's published host port). For simplicity when learning, copying pgAdmin per project is also fine.
+## Connect to the database
 
-## What you're missing (things to learn next)
+**pgAdmin (browser):** after logging in, register the server once:
 
-This minimal file intentionally leaves out a lot. Here's what's commonly added and why:
+1. Right-click **Servers** → **Register** → **Server…**
+2. **General** tab → **Name:** `pgdb` (any label).
+3. **Connection** tab:
+   - **Host name/address:** `postgres` ← the Compose *service name*, not
+     `localhost`. Containers reach each other by service name over the Compose
+     network.
+   - **Port:** `5432`
+   - **Maintenance database:** `pgdb`
+   - **Username / Password:** your `POSTGRES_USER` / `POSTGRES_PASSWORD`
+   - Tick **Save password**, then **Save**.
+4. Expand **Servers → pgdb → Databases → pgdb** to browse, run the Query Tool,
+   and create tables.
 
-- **Secrets via `.env` (done).** The credentials are no longer hardcoded in `docker-compose.yaml`. They live in a `.env` file in this folder, and the compose file references them with `${POSTGRES_PASSWORD}`, `${PGADMIN_DEFAULT_PASSWORD}`, etc. Docker Compose auto-loads `.env` and substitutes those values at startup. The `.env` is gitignored (see `.gitignore`), so the real secrets never get committed; `.env.example` is committed instead with placeholder values so collaborators know which keys to supply. This is the standard Compose approach for local dev. For production-grade secret handling, use **Docker secrets** or a secrets manager (e.g. AWS Secrets Manager, Vault)—those encrypt at rest and avoid plaintext files entirely.
+**psql (CLI):**
 
-- **A custom Docker network.** Compose already creates a default network so the two services can talk by name. You usually don't need to declare one, but knowing it exists explains why `host: postgres` works inside pgAdmin.
+```bash
+docker compose exec postgres psql -U postgres -d pgdb
+```
 
-- **Resource limits / restart policy.** `restart: unless-stopped` keeps the DB running after a reboot or crash. You can also cap CPU/memory.
+See [`PSQL-CLI_CHEATSHEET.md`](./PSQL-CLI_CHEATSHEET.md) for more, and
+[`SQL_CHEATSHEET.md`](./SQL_CHEATSHEET.md) for SQL reference.
 
-- **An init script.** If you want tables/seed data created automatically on first run, mount a `.sql` file into `/docker-entrypoint-initdb.d/` on the postgres service.
+## Useful commands
 
-- **pgAdmin persistence.** pgAdmin currently stores its own config in its container with no volume, so your registered servers disappear on `docker compose down`. Add a volume for `/var/lib/pgadmin` if you want them to persist.
+Run from this folder (Compose reads `docker-compose.yaml` in the current dir):
 
-None of these are required to get a working local dev database—they're the next steps once the basics click.
+| Command | What it does |
+| --- | --- |
+| `docker compose up -d` | Start all services detached (background). |
+| `docker compose ps` | Show service status (`Up`, `healthy`, `Exit`). |
+| `docker compose logs -f postgres` | Follow Postgres logs live (debug boot/connection). |
+| `docker compose restart` | Restart containers without rebuilding. |
+| `docker compose down` | Stop and remove containers + network (data kept). |
+| `docker compose down -v` | Same, but also delete volumes (**all data lost**). |
+| `docker compose exec postgres psql -U postgres -d pgdb` | Open a `psql` shell inside the container. |
+| `docker compose config` | Validate/print the resolved Compose config. |
+| `docker volume ls` | List Docker volumes (find `create-pgbox_postgres_data`). |
+
+> `-d` = **detached** (runs in the background, returns your prompt). Without it,
+> Compose streams logs in the foreground and `Ctrl+C` stops the services.
+> `down` never takes `-d` — it's a one-shot teardown that exits immediately.
+
+## How `docker-compose.yaml` works
+
+A quick tour of the file:
+
+- **`services:`** — the two containers we run: `postgres` and `pgadmin`.
+- **`image:`** — prebuilt images from Docker Hub, pinned to a major version
+  (`postgres:18`, `dpage/pgadmin4:9`) for reproducibility. Avoid `:latest`.
+- **`environment:`** — startup config. The Postgres image reads `POSTGRES_USER`,
+  `POSTGRES_PASSWORD`, and `POSTGRES_DB` on **first init** to create the admin
+  user and the `pgdb` database. Credentials come from `.env` via `${VAR}`.
+- **`ports:`** — `host:container`. `5432:5432` exposes Postgres to your machine;
+  `5050:80` publishes pgAdmin's internal port 80 on host port 5050.
+- **`volumes:`** — `postgres_data:/var/lib/postgresql` persists the database so it
+  survives container recreation. (Mount at the parent `/var/lib/postgresql`, not
+  `/var/lib/postgresql/data` — PG 18 stores data in a version subdirectory.)
+  `pgadmin_data:/var/lib/pgadmin` persists pgAdmin's own settings/registered
+  servers.
+- **`healthcheck:`** — `pg_isready` tells Docker when Postgres is actually
+  *ready*, not just *running*.
+- **`depends_on: condition: service_healthy`** — pgAdmin waits for Postgres to be
+  healthy before starting, avoiding "connection refused" on boot.
+- **`restart: unless-stopped`** — both services come back after a reboot/crash,
+  but stay down if you `docker compose down` them.
+
+## Reusing this for other projects
+
+Prefer **one `docker-compose.yaml` per project** rather than sharing this one.
+To spin up a DB for a new app:
+
+1. Copy `docker-compose.yaml` and `.env.example` into the new project.
+2. Give things unique names (`container_name`, `POSTGRES_DB`, volume names) to
+   avoid collisions.
+3. Avoid host-port clashes: only one project can publish `5432` at a time —
+   change the new project's host port (e.g. `"5433:5432"`).
+4. Use distinct credentials per project via its own `.env`.
+5. `cd` into the new project and `docker compose up -d`.
+
+One pgAdmin can manage many servers, so you don't need a pgAdmin container in
+every project.
+
+## Optional & advanced ideas
+
+Not included here (kept lightweight on purpose), but easy to add later:
+
+- **Seed data** — drop `*.sql` / `*.sh` into a folder mounted at
+  `/docker-entrypoint-initdb.d/`; they run once on a fresh `postgres_data` volume.
+- **Pre-register pgAdmin servers** — mount a `servers.json` and set
+  `PGADMIN_SERVER_JSON_FILE` to auto-add the server on first launch.
+- **Resource limits** — cap CPU/memory per service via `deploy.resources.limits`.
+- **Production secrets** — use Docker secrets or a secrets manager (Vault, AWS
+  Secrets Manager) instead of a plaintext `.env`.

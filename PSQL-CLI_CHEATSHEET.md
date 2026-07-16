@@ -12,6 +12,21 @@ container via Docker Compose.
 
 ---
 
+## Spin up first
+
+The container must be running before you can connect. From the project folder:
+
+```bash
+cp .env.example .env       # first time only
+docker compose up -d       # start Postgres + pgAdmin
+docker compose ps          # confirm postgres is "healthy"
+```
+
+Stop with `docker compose down` (keeps data) or `docker compose down -v` (wipes
+data). See the [README](./README.md) for full setup details.
+
+---
+
 ## Connecting
 
 ### One-liner (connect directly)

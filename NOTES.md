@@ -1,5 +1,17 @@
 # Notes on course - will delete later after added to README
 
+## Spin up
+
+```bash
+cp .env.example .env     # first time only
+docker compose up -d     # start Postgres + pgAdmin
+docker compose ps        # confirm postgres is "healthy"
+```
+
+- pgAdmin: <http://localhost:5050> (login from `.env`)
+- Stop: `docker compose down` (keeps data) / `docker compose down -v` (wipes data)
+- Full setup: see [README.md](./README.md)
+
 ## pgsql cli
 
 Connect to Postgres via the `pg-pgdb` container:

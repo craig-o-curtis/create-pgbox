@@ -13,6 +13,21 @@ Tool (**F5** to execute) or in `psql`.
 
 ---
 
+## Spin up first
+
+Start the stack, then run these queries in pgAdmin or psql:
+
+```bash
+cp .env.example .env                                  # first time only
+docker compose up -d                                  # start Postgres + pgAdmin
+docker compose exec postgres psql -U postgres -d pgdb # open a SQL prompt
+```
+
+pgAdmin is at <http://localhost:5050>. See the [README](./README.md) for setup
+and [`PSQL-CLI_CHEATSHEET.md`](./PSQL-CLI_CHEATSHEET.md) for the psql client.
+
+---
+
 ## Common data types
 
 | Type              | Use for                                   | Example value                  |
