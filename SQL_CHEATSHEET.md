@@ -27,6 +27,39 @@ Tool (**F5** to execute) or in `psql`.
 | `TIMESTAMP`       | Date + time (no time zone)                | `2026-07-16 11:25:39.123456`   |
 | `TIMESTAMPTZ`     | Date + time **with** time zone (preferred)| `2026-07-16 11:25:39.123456+03`|
 
+### Dates, time & time zones (UTC vs local)
+
+Short answer: it depends on the type **and** the session's `TimeZone` setting.
+
+- **`DATE`** — a calendar date only. No time, no zone.
+- **`TIMESTAMP`** (a.k.a. *without time zone*) — stores exactly the numbers you
+  give it. **No zone awareness, no conversion** — it's just a "wall clock"
+  reading. You are responsible for knowing whether it means UTC or local.
+- **`TIMESTAMPTZ`** — despite the name, it does **not** store a zone. On INSERT
+  it interprets your input using the session's time zone, converts it to
+  **UTC**, and stores that UTC instant. On SELECT it converts back to the
+  session's time zone for display. So: **stored as UTC, shown as local.**
+
+The "local" zone comes from the session parameter `TimeZone`, not directly from
+your OS:
+
+```sql
+SHOW timezone;          -- what zone this session uses
+SELECT now();           -- current timestamptz (shown in session zone)
+SELECT now() AT TIME ZONE 'UTC';   -- same instant expressed as UTC
+SET timezone = 'America/New_York'; -- change it for this session
+```
+
+> **This project:** the `postgres` Docker image defaults to **`Etc/UTC`**, *not*
+> your machine's zone. So even on a UTC+3 laptop, `now()` prints UTC time (e.g.
+> `10:50+00` while your Mac clock says `13:50`). Timestamps here are effectively
+> UTC unless you change `TimeZone`.
+
+**Rule of thumb:** prefer **`TIMESTAMPTZ`** for anything that marks a real moment
+in time (created_at, logins, events). It keeps everything anchored to UTC
+internally and displays correctly for any user's zone. Use plain `TIMESTAMP`
+only for zone-less "wall clock" values (e.g. a store's 9:00 AM opening time).
+
 ---
 
 ## Constraints
@@ -218,6 +251,48 @@ SELECT * FROM people WHERE first_name LIKE '%i%';  -- contains 'i'
 
 `%` = any number of characters, `_` = exactly one character.
 
+### 5a. Pattern matching (`LIKE`) — starts with / ends with / contains
+
+Use `LIKE` with wildcards to match parts of text. The `%` wildcard stands for
+"any characters (including none)":
+
+```sql
+-- last name STARTS WITH 'J'  (J at the start, anything after)
+SELECT * FROM people WHERE last_name LIKE 'J%';
+
+-- last name ENDS WITH 's'  (anything before, s at the end)
+SELECT * FROM people WHERE last_name LIKE '%s';
+
+-- last name CONTAINS 'on'  (anywhere in the string)
+SELECT * FROM people WHERE last_name LIKE '%on%';
+
+-- exact length with '_' : first name is exactly 3 letters
+SELECT * FROM people WHERE first_name LIKE '___';
+
+-- starts with 'J' AND is 5 characters long ('J' + four more)
+SELECT * FROM people WHERE first_name LIKE 'J____';
+```
+
+Read the wildcards as:
+
+| Pattern   | Matches                          | Example matches      |
+| --------- | -------------------------------- | -------------------- |
+| `'J%'`    | starts with J                    | Jones, Jackson, J    |
+| `'%s'`    | ends with s                      | Jones, Adams, s      |
+| `'%on%'`  | contains "on" anywhere           | Jones, Thompson      |
+| `'_at'`   | one char, then "at" (3 chars)    | cat, bat, hat        |
+| `'%'`     | anything (even empty)            | everything           |
+
+**Case sensitivity:** `LIKE` is case-**sensitive** (`'j%'` won't match "Jones").
+Use `ILIKE` for case-**insensitive** matching:
+
+```sql
+SELECT * FROM people WHERE last_name ILIKE 'j%';   -- matches Jones AND jones
+```
+
+> Tip: to match a literal `%` or `_` in your text, escape it:
+> `WHERE note LIKE '100\%'` matches the string "100%".
+
 ### 6. Working with NULL
 
 NULL means "unknown", so you can't compare it with `=`. Use `IS`:
@@ -253,6 +328,55 @@ LIMIT 10;
 
 > Clause order matters: `SELECT ... FROM ... WHERE ... GROUP BY ... HAVING ...
 > ORDER BY ... LIMIT`.
+
+### Removing duplicates with `DISTINCT`
+
+`DISTINCT` removes duplicate rows from the result, returning only unique values.
+It applies to **all the columns you select**, considered together.
+
+```sql
+-- every job value, including repeats
+SELECT job FROM people;
+
+-- each job listed only once
+SELECT DISTINCT job FROM people;
+
+-- unique COMBINATIONS of job + employed (a pair is a duplicate only if
+-- BOTH columns match another row)
+SELECT DISTINCT job, employed FROM people;
+
+-- count how many DIFFERENT jobs exist
+SELECT COUNT(DISTINCT job) FROM people;
+
+-- often paired with ORDER BY to get a clean sorted list
+SELECT DISTINCT job FROM people ORDER BY job;
+```
+
+Notes & gotchas:
+
+- `DISTINCT` looks at **every selected column**. `SELECT DISTINCT first_name, job`
+  keeps a row unless *both* values repeat — so you may still see repeated
+  `first_name` values.
+- `NULL`s are treated as equal to each other, so all NULLs collapse into a
+  single row.
+- To find which values actually repeat (and how often), use `GROUP BY` +
+  `COUNT` instead:
+
+  ```sql
+  SELECT job, COUNT(*)
+  FROM people
+  GROUP BY job
+  HAVING COUNT(*) > 1;    -- only jobs that appear more than once
+  ```
+
+- Postgres also has `DISTINCT ON (col)` to keep the first row per value:
+
+  ```sql
+  -- one (oldest) person per job
+  SELECT DISTINCT ON (job) job, first_name, age
+  FROM people
+  ORDER BY job, age DESC;
+  ```
 
 ### Aggregates & grouping
 
