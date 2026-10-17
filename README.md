@@ -67,22 +67,59 @@ The database name (`pgdb`), ports (`5432`, `5050`), and container names
 
 ## Connect to the database
 
-**pgAdmin (browser):** after logging in, register the server once:
+### Register the server in pgAdmin
 
-1. Right-click **Servers** → **Register** → **Server…**
-2. **General** tab → **Name:** `pgdb` (any label).
-3. **Connection** tab:
-   - **Host name/address:** `postgres` ← the Compose *service name*, not
-     `localhost`. Containers reach each other by service name over the Compose
-     network.
-   - **Port:** `5432`
-   - **Maintenance database:** `pgdb`
-   - **Username / Password:** your `POSTGRES_USER` / `POSTGRES_PASSWORD`
-   - Tick **Save password**, then **Save**.
-4. Expand **Servers → pgdb → Databases → pgdb** to browse, run the Query Tool,
-   and create tables.
+You only do this **once**: pgAdmin remembers it between restarts. One server
+entry shows **every** database on it (`pgdb`, `dvdrental`, …), so you never
+register databases one by one.
 
-**psql (CLI):**
+#### Step 1: Open the dialog
+
+1. Go to <http://localhost:5050> and log in with your `PGADMIN_DEFAULT_EMAIL` /
+   `PGADMIN_DEFAULT_PASSWORD`.
+2. In the left sidebar, right-click **Servers** → **Register** → **Server…**
+
+#### Step 2: General tab
+
+| Field | Enter |
+| --- | --- |
+| **Name** | `pgdb` |
+
+That's the only field. It's just the label shown in the sidebar.
+
+#### Step 3: Connection tab
+
+| Field | Enter | Notes |
+| --- | --- | --- |
+| **Host name/address** | `postgres` | Not `localhost` (see below) |
+| **Port** | `5432` | Already filled in |
+| **Maintenance database** | `pgdb` | Leaving `postgres` also works |
+| **Username** | `postgres` | ⚠️ Replace the pre-filled `admin` |
+| **Password** | your `POSTGRES_PASSWORD` | From `.env` |
+| **Save password?** | turn **on** | So you aren't asked every time |
+
+Leave every other field and tab as it is.
+
+#### Step 4: Save
+
+Click **Save**. pgAdmin connects right away, and **pgdb** appears under
+**Servers**.
+
+#### Step 5: Find your tables
+
+Expand **Servers → pgdb → Databases → *your database* → Schemas → public →
+Tables**. For SQL, right-click the database and choose **Query Tool**.
+
+#### Troubleshooting
+
+| Problem | Fix |
+| --- | --- |
+| "Name cannot be empty" | Fill in **Name** on the **General** tab. |
+| Can't connect / timeout | Host must be `postgres`, not `localhost`. pgAdmin runs in its own container, so `localhost` points at pgAdmin itself. Containers reach each other by Compose service name. |
+| Password authentication failed | Username must be `postgres` (not `admin`). The password must match `POSTGRES_PASSWORD` in `.env`. |
+| A database you just created is missing | Right-click **Databases** → **Refresh**. |
+
+### psql (CLI)
 
 ```bash
 docker compose exec postgres psql -U postgres -d pgdb
@@ -90,6 +127,49 @@ docker compose exec postgres psql -U postgres -d pgdb
 
 See [`PSQL-CLI_CHEATSHEET.md`](./PSQL-CLI_CHEATSHEET.md) for more, and
 [`SQL_CHEATSHEET.md`](./SQL_CHEATSHEET.md) for SQL reference.
+
+## Sample data (dvdrental)
+
+`sample-data/dvdrental.tar` is the classic
+[DVD Rental](https://neon.com/postgresql/postgresql-getting-started/postgresql-sample-database)
+sample database (15 tables: `film`, `actor`, `customer`, `rental`, `payment`, …).
+It's a `pg_dump` tar archive. The `sample-data/dvdrental/` folder is the same
+dump unpacked and isn't needed.
+
+With the stack running (`docker compose up -d`, Postgres `healthy`):
+
+```bash
+# 1. Create an empty database for it (the dump doesn't create one)
+docker compose exec postgres createdb -U postgres dvdrental
+
+# 2. Copy the archive into the container (sample-data/ isn't mounted)
+docker cp sample-data/dvdrental.tar pg-pgdb:/tmp/dvdrental.tar
+
+# 3. Restore it (no output = success)
+docker compose exec postgres pg_restore -U postgres -d dvdrental --no-owner /tmp/dvdrental.tar
+
+# 4. Verify: ~15 tables, 1000 films
+docker compose exec postgres psql -U postgres -d dvdrental -c '\dt'
+docker compose exec postgres psql -U postgres -d dvdrental -c 'SELECT count(*) FROM film;'
+```
+
+Open it with `docker compose exec postgres psql -U postgres -d dvdrental`.
+
+**In pgAdmin:** one registered server shows every database on it, so you don't
+need to register `dvdrental` separately.
+
+- **Already registered the `pgdb` server?** Expand **Servers → pgdb**,
+  right-click **Databases → Refresh**, and `dvdrental` appears.
+- **No server registered yet?** Follow the steps in
+  [Register the server in pgAdmin](#register-the-server-in-pgadmin) (host
+  `postgres`, username `postgres`, not `admin`). If you'd rather open straight into the sample data, set
+  **Maintenance database** to `dvdrental`.
+- Tables are under **dvdrental → Schemas → public → Tables**. For SQL,
+  right-click `dvdrental` and choose **Query Tool**.
+
+To reload from scratch: `docker compose exec postgres dropdb -U postgres dvdrental`,
+then repeat steps 1–3. (Don't use `docker compose down -v` for this; it deletes
+**all** data, `pgdb` included.)
 
 ## Useful commands
 
