@@ -1,5 +1,7 @@
 # psql CLI Cheatsheet
 
+← Back to the [cheatsheet index](./CHEATSHEET.md)
+
 `psql` is the PostgreSQL command-line client. In this project Postgres runs
 inside the `pg-pgdb` container, so you connect by running `psql` from inside that
 container via Docker Compose.
@@ -23,7 +25,7 @@ docker compose ps          # confirm postgres is "healthy"
 ```
 
 Stop with `docker compose down` (keeps data) or `docker compose down -v` (wipes
-data). See the [README](./README.md) for full setup details.
+data). See the [README](../README.md) for full setup details.
 
 ---
 
@@ -55,6 +57,21 @@ psql -U postgres -d pgdb
 No password is needed from _inside_ the container (trusted local socket). When
 connected, the prompt becomes `pgdb=#`.
 
+### Other databases on the same server
+
+Swap the `-d` value, or switch from inside psql with `\c`:
+
+```bash
+docker compose exec postgres psql -U postgres -d dvdrental     # sample data
+docker compose exec postgres psql -U postgres -d employee_db   # practice tables
+```
+
+### Run one query without opening a session
+
+```bash
+docker compose exec postgres psql -U postgres -d dvdrental -c 'SELECT count(*) FROM film;'
+```
+
 ### From your host machine (not the container)
 
 Postgres is published on `localhost:5432`, so if you have `psql` installed
@@ -80,6 +97,7 @@ These start with a backslash and are specific to psql (not SQL).
 \du             list roles / users
 \df             list functions
 \dv             list views
+\sv my_view     show a view's SQL
 \di             list indexes
 \x              toggle expanded (vertical) row output
 \timing         toggle showing how long queries take
