@@ -125,8 +125,9 @@ Tables**. For SQL, right-click the database and choose **Query Tool**.
 docker compose exec postgres psql -U postgres -d pgdb
 ```
 
-See [`PSQL-CLI_CHEATSHEET.md`](./PSQL-CLI_CHEATSHEET.md) for more, and
-[`SQL_CHEATSHEET.md`](./SQL_CHEATSHEET.md) for SQL reference.
+See [`PSQL-CLI_CHEATSHEET.md`](./cheatsheets/PSQL-CLI_CHEATSHEET.md) for more, and
+[`cheatsheets/CHEATSHEET.md`](./cheatsheets/CHEATSHEET.md) for the SQL cheatsheets (basics, queries,
+functions, schema, advanced).
 
 ## Sample data (dvdrental)
 

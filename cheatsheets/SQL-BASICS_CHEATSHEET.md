@@ -1,7 +1,11 @@
-# PostgreSQL SQL Cheatsheet
+# SQL Basics Cheatsheet
 
-Quick reference for everyday Postgres SQL. Run statements in the pgAdmin Query
-Tool (**F5** to execute) or in `psql`.
+Quick reference for everyday Postgres SQL: creating tables, CRUD, `WHERE`,
+constraints and foreign keys. Run statements in the pgAdmin Query Tool (**F5**
+to execute) or in `psql`.
+
+← Back to the [cheatsheet index](./CHEATSHEET.md). Ready for real data? Go on
+to [SQL Queries (dvdrental)](./SQL-QUERIES_CHEATSHEET.md).
 
 **Quoting rule:** string values use **single quotes** (`'Mike'`). Double quotes
 (`"..."`) are for identifiers like table/column names — not text values.
@@ -23,7 +27,7 @@ docker compose up -d                                  # start Postgres + pgAdmin
 docker compose exec postgres psql -U postgres -d pgdb # open a SQL prompt
 ```
 
-pgAdmin is at <http://localhost:5050>. See the [README](./README.md) for setup
+pgAdmin is at <http://localhost:5050>. See the [README](../README.md) for setup
 and [`PSQL-CLI_CHEATSHEET.md`](./PSQL-CLI_CHEATSHEET.md) for the psql client.
 
 ---
@@ -235,6 +239,21 @@ CREATE TABLE IF NOT EXISTS people (
 ```
 
 `IF NOT EXISTS` avoids an error if the table already exists.
+
+### Creating a table in pgAdmin
+
+In the left panel, drill down to **Servers → pgdb → Databases → *your db* →
+Schemas → public → Tables**, then either:
+
+- **GUI:** right-click **Tables** → **Create** → **Table…**. Enter a **Name** on
+  the General tab, then add columns on the **Columns** tab with **+** (name,
+  data type, Not NULL, Primary key). The **SQL** tab previews the
+  `CREATE TABLE` it will run. Click **Save**.
+- **SQL:** right-click the database → **Query Tool**, paste the
+  `CREATE TABLE`, and press **F5** (or ▶ Execute).
+
+New table not showing up? Right-click **Tables** → **Refresh**. In psql,
+check it with `\dt` and `\d users`.
 
 ---
 
@@ -1208,22 +1227,9 @@ COMMIT;    -- save changes  (use ROLLBACK; to undo instead)
 
 ---
 
-## psql meta-commands
+## Where next
 
-```text
-\l           list databases
-\c pgdb      connect to the pgdb database
-\dt          list tables
-\d people    describe a table (columns, types, keys)
-\du          list roles/users
-\dn          list schemas
-\x           toggle expanded (vertical) row output
-\q           quit psql
-```
-
-Connect to the running container (Docker Compose):
-
-```bash
-docker compose exec postgres bash
-psql -U postgres -d pgdb
-```
+- psql shortcuts (`\dt`, `\d`, `\x`): [PSQL-CLI cheatsheet](./PSQL-CLI_CHEATSHEET.md)
+- Joins, subqueries and `UNION` on real data: [SQL Queries](./SQL-QUERIES_CHEATSHEET.md)
+- Dates, strings, `CASE`, `COALESCE`: [SQL Functions](./SQL-FUNCTIONS_CHEATSHEET.md)
+- Data types, `TRUNCATE` vs `DROP`, views: [SQL Schema](./SQL-SCHEMA_CHEATSHEET.md)
